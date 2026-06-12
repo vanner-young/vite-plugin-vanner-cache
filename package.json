@@ -1,0 +1,23 @@
+{
+  "name": "vite-plugin-fetch-cache",
+  "version": "1.0.0",
+  "description": "",
+  "license": "ISC",
+  "author": "",
+  "main": "./dist/plugin.js",
+  "types": "./dist/types/plugin",
+  "scripts": {
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "lint": "oxlint --ignore-path .oxlintignore && tsc && tsc -p ./src/sw/tsconfig.json",
+    "build": "pnpm format && pnpm lint && rolldown -c"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "oxfmt": "^0.54.0",
+    "oxlint": "^1.69.0",
+    "rolldown": "^1.1.1",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.16"
+  }
+}

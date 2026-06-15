@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.plugin.json",
+  "compilerOptions": {
+    "target": "esnext",
+    "lib": ["webworker", "esnext", "DOM"],
+    "types": [],
+    "noEmit": true,
+    "tsBuildInfoFile": "./dist/.ts_build_info/tsconfig.sw_build.json"
+  },
+  "include": ["src/sw/**/*.ts"],
+  "exclude": []
+}

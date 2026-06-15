@@ -1,16 +1,18 @@
 //#region package.json
-var name = "vite-plugin-fetch-cache";
-//#endregion
-//#region src/constance/sw.ts
-const CACHE_NAME = "vanner-cache";
+var name = "vite-plugin-vanner-cache";
 //#endregion
 //#region src/sw/core.ts
 var CacheUtil = class {
-	async storageCache(request, networkResponse) {
-		const cache = await caches.open(CACHE_NAME);
+	async storageCache(request, networkResponse, cacheName) {
+		const cache = await caches.open(cacheName);
 		const cachedRequests = await cache.keys();
 		if (cachedRequests.length >= 100) await cache.delete(cachedRequests[0]);
 		await cache.put(request, networkResponse);
+	}
+	async removeOldCache(caches, cacheName) {
+		console.log("🚀 start clean sw cache...");
+		const promises = (await caches.keys()).map((key) => key === cacheName ? caches.delete(key) : void 0);
+		return Promise.all(promises);
 	}
 };
 var CacheCore = class extends CacheUtil {
@@ -22,7 +24,7 @@ var CacheCore = class extends CacheUtil {
 		this.fetchBefore = this.fetchBefore.bind(this);
 	}
 	requestCache = /* @__PURE__ */ new Map();
-	isCleanOldCache = false;
+	cacheName = "vanner-cache";
 	interceptList = [];
 	/**
 	* worker service 注册监听，跳过所有等待直接通过
@@ -35,22 +37,21 @@ var CacheCore = class extends CacheUtil {
 	* 监听 worker data 数据传输
 	* @param { ExtendableMessageEvent } event 数据传输对象
 	* **/
-	workerData(event) {
+	async workerData(event) {
 		if (!event.data) return;
-		const { apis = [] } = event.data;
-		if (Array.isArray(apis) && apis.length) this.interceptList = [...apis];
+		const { type, value } = JSON.parse(event.data);
+		if (type === "_v_data") {
+			const { apis = [], scopeName } = value;
+			this.cacheName = scopeName;
+			this.interceptList = [...apis];
+		} else if (type === "_v_clean_cache") await this.removeOldCache(caches, this.cacheName);
 	}
 	/**
 	* 运行前准备，处理所有缓存
 	* @param { ExtendableEvent } event 原始event
 	* **/
 	async serviceActivate(event) {
-		let promise = Promise.resolve();
-		if (this.isCleanOldCache) promise = promise.then(async () => {
-			const promises = (await caches.keys()).map((key) => key === "vanner-cache" ? caches.delete(key) : void 0);
-			return Promise.all(promises);
-		});
-		event.waitUntil(promise.then(() => self.clients.claim()));
+		event.waitUntil(self.clients.claim());
 	}
 	/**
 	* 拦截所有fetch 请求，核心逻辑
@@ -66,7 +67,7 @@ var CacheCore = class extends CacheUtil {
 			if (this.requestCache.has(cacheKey)) fetchRequest = this.requestCache.get(cacheKey);
 			else {
 				fetchRequest = fetch(event.request.clone()).then((networkResponse) => {
-					if (networkResponse && networkResponse.status === 200) this.storageCache(event.request, networkResponse.clone());
+					if (networkResponse && networkResponse.status === 200) this.storageCache(event.request, networkResponse.clone(), this.cacheName);
 					return networkResponse;
 				}).finally(() => {
 					this.requestCache.delete(cacheKey);

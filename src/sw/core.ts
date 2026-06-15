@@ -1,18 +1,24 @@
 import { name } from "../../package.json";
-import { CACHE_NAME, MAX_CACHE_ENTRIES } from "../constance/sw";
+import { MAX_CACHE_ENTRIES } from "./constant";
 
 declare const self: ServiceWorkerGlobalScope;
 
 export class CacheUtil {
     // LUR 缓存淘汰机制, 存储缓存
-    async storageCache(request: Request, networkResponse: Response) {
-        const cache = await caches.open(CACHE_NAME);
+    async storageCache(request: Request, networkResponse: Response, cacheName: string) {
+        const cache = await caches.open(cacheName);
         const cachedRequests = await cache.keys();
 
         if (cachedRequests.length >= MAX_CACHE_ENTRIES) {
             await cache.delete(cachedRequests[0]!);
         }
         await cache.put(request, networkResponse);
+    }
+    async removeOldCache(caches: CacheStorage, cacheName: string) {
+        console.log("🚀 start clean sw cache...");
+        const keys = await caches.keys();
+        const promises = keys.map((key) => (key === cacheName ? caches.delete(key) : undefined));
+        return Promise.all(promises);
     }
 }
 
@@ -27,7 +33,7 @@ export class CacheCore extends CacheUtil {
     }
 
     public requestCache = new Map();
-    public isCleanOldCache = false; // 是否在运行前清除老的缓存
+    public cacheName = "vanner-cache"; // 缓存key值名称
     public interceptList: Array<string> = []; // 接口拦截列表
 
     /**
@@ -42,13 +48,15 @@ export class CacheCore extends CacheUtil {
      * 监听 worker data 数据传输
      * @param { ExtendableMessageEvent } event 数据传输对象
      * **/
-    workerData(event: ExtendableMessageEvent) {
+    async workerData(event: ExtendableMessageEvent) {
         if (!event.data) return;
-        const { apis = [] } = event.data;
-
-        // api 接口拦截
-        if (Array.isArray(apis) && apis.length) {
+        const { type, value } = JSON.parse(event.data);
+        if (type === "_v_data") {
+            const { apis = [], scopeName } = value;
+            this.cacheName = scopeName;
             this.interceptList = [...(apis as Array<string>)];
+        } else if (type === "_v_clean_cache") {
+            await this.removeOldCache(caches, this.cacheName);
         }
     }
 
@@ -57,18 +65,7 @@ export class CacheCore extends CacheUtil {
      * @param { ExtendableEvent } event 原始event
      * **/
     async serviceActivate(event: ExtendableEvent) {
-        let promise: Promise<void | (boolean | undefined)[]> = Promise.resolve();
-
-        // 是否删除老的缓存
-        if (this.isCleanOldCache) {
-            promise = promise.then(async () => {
-                const keys = await caches.keys();
-
-                const promises = keys.map((key) => (key === CACHE_NAME ? caches.delete(key) : undefined));
-                return Promise.all(promises);
-            });
-        }
-        event.waitUntil(promise.then(() => self.clients.claim()));
+        event.waitUntil(self.clients.claim());
     }
 
     /**
@@ -87,6 +84,7 @@ export class CacheCore extends CacheUtil {
 
         event.respondWith(
             caches.match(event.request).then((cachedResponse) => {
+                // 请求复用，兼容在一定时间内多次重复请求
                 let fetchRequest: Promise<Response>;
 
                 if (this.requestCache.has(cacheKey)) {
@@ -96,7 +94,7 @@ export class CacheCore extends CacheUtil {
                         .then((networkResponse) => {
                             // status 为 200 才缓存
                             if (networkResponse && networkResponse.status === 200) {
-                                this.storageCache(event.request, networkResponse.clone());
+                                this.storageCache(event.request, networkResponse.clone(), this.cacheName);
                             }
                             return networkResponse;
                         })

@@ -1,5 +1,5 @@
 {
-  "name": "vite-plugin-fetch-cache",
+  "name": "vite-plugin-vanner-cache",
   "version": "1.0.0",
   "description": "",
   "license": "ISC",
@@ -9,8 +9,8 @@
   "scripts": {
     "format": "oxfmt",
     "format:check": "oxfmt --check",
-    "lint": "oxlint --ignore-path .oxlintignore && tsc && tsc -p ./src/sw/tsconfig.json",
-    "build": "pnpm format && pnpm lint && rolldown -c"
+    "lint": "oxlint --ignore-path .oxlintignore && tsc -b",
+    "build": "pnpm lint && pnpm format && rolldown -c"
   },
   "devDependencies": {
     "@types/node": "^25.9.3",

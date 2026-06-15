@@ -1,4 +1,3 @@
 import type { Plugin } from "vite";
-import type { RegisterProps } from "../types/sw";
-export declare const LibName = "vanner-cache.js";
+import type { RegisterProps } from "./type";
 export default function (props: RegisterProps): Plugin;

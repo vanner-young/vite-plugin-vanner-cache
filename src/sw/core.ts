@@ -92,7 +92,6 @@ export class CacheCore extends CacheUtil {
                 } else {
                     fetchRequest = fetch(event.request.clone())
                         .then((networkResponse) => {
-                            // status 为 200 才缓存
                             if (networkResponse && networkResponse.status === 200) {
                                 this.storageCache(event.request, networkResponse.clone(), this.cacheName);
                             }

@@ -1,10 +1,10 @@
 {
   "name": "vite-plugin-vanner-cache",
-  "version": "0.0.3",
+  "version": "0.1.0",
   "description": "一款采用 sw 开发的 Vite 开发、生成缓存插件，可对后端响应慢的请求实现毫秒级缓存加载。其缓存时间窗口取决于接口的响应时间。",
   "license": "MIT",
   "main": "./dist/plugin.js",
-  "types": "./dist/types/plugin",
+  "types": "./dist/types",
   "repository": "https://github.com/vanner-young/vite-plugin-vanner-cache.git",
   "author": "vanneryoung@gmail.com <vanneryoung@gmail.com>",
   "keywords": [
@@ -23,7 +23,6 @@
   "scripts": {
     "format": "oxfmt",
     "lint": "oxlint && tsc -b",
-    "format:check": "oxfmt --check",
     "build": "pnpm lint && pnpm format && rolldown -c",
     "prepublishOnly": "pnpm build"
   },

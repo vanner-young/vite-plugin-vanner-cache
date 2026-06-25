@@ -1,15 +1,13 @@
 import { name } from "../../package.json";
-import { MAX_CACHE_ENTRIES } from "./constant";
 
 declare const self: ServiceWorkerGlobalScope;
-
 export class CacheUtil {
     // LUR 缓存淘汰机制, 存储缓存
-    async storageCache(request: Request, networkResponse: Response, cacheName: string) {
+    async storageCache(request: Request, networkResponse: Response, cacheName: string, maxCacheNum: number) {
         const cache = await caches.open(cacheName);
         const cachedRequests = await cache.keys();
 
-        if (cachedRequests.length >= MAX_CACHE_ENTRIES) {
+        if (cachedRequests.length >= maxCacheNum) {
             await cache.delete(cachedRequests[0]!);
         }
         await cache.put(request, networkResponse);
@@ -35,6 +33,7 @@ export class CacheCore extends CacheUtil {
     public requestCache = new Map();
     public cacheName = "vanner-cache"; // 缓存key值名称
     public interceptList: Array<string> = []; // 接口拦截列表
+    public maxCacheNumber = 100; // 默认最大缓存数量
 
     /**
      * worker service 注册监听，跳过所有等待直接通过
@@ -52,9 +51,10 @@ export class CacheCore extends CacheUtil {
         if (!event.data) return;
         const { type, value } = JSON.parse(event.data);
         if (type === "_v_data") {
-            const { apis = [], scopeName } = value;
+            const { apis = [], scopeName, maxCacheNumber = this.maxCacheNumber } = value;
             this.cacheName = scopeName;
             this.interceptList = [...(apis as Array<string>)];
+            this.maxCacheNumber = maxCacheNumber;
         } else if (type === "_v_clean_cache") {
             await this.removeOldCache(caches, this.cacheName);
         }
@@ -93,7 +93,12 @@ export class CacheCore extends CacheUtil {
                     fetchRequest = fetch(event.request.clone())
                         .then((networkResponse) => {
                             if (networkResponse && networkResponse.status === 200) {
-                                this.storageCache(event.request, networkResponse.clone(), this.cacheName);
+                                this.storageCache(
+                                    event.request,
+                                    networkResponse.clone(),
+                                    this.cacheName,
+                                    this.maxCacheNumber,
+                                );
                             }
                             return networkResponse;
                         })

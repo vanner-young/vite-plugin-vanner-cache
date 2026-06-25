@@ -1,6 +1,7 @@
 {
   "extends": "./tsconfig.plugin.json",
   "compilerOptions": {
+    "rootDir": "./src/sw",
     "target": "esnext",
     "lib": ["webworker", "esnext", "DOM"],
     "types": [],

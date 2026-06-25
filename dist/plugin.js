@@ -1,6 +1,6 @@
-import fs from "node:fs";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import path, { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 //#region src/plugin/constant.ts
 const LibName = "vanner-cache.js";
 const MAIN_CHUNK = "_v_main_fetch_code_chunk";
@@ -11,8 +11,8 @@ function injectCode({ pkgName, sendData, scopeRegisterPath }) {
 	return `
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-
-                if (${Number(sendData.cacheTimeout)} <= 0) {
+                const cacheTimeout = ${JSON.stringify(sendData.cacheTimeout)}
+                if (cacheTimeout && cacheTimeout < 1000 * 60 * 60) {
                     navigator.serviceWorker.getRegistration('${scope}').then((registration) => {
                         if (!registration) return
                         registration.unregister().then(() => {
@@ -30,15 +30,16 @@ function injectCode({ pkgName, sendData, scopeRegisterPath }) {
                     localStorage.setItem('_v_cache_time', Date.now());
                     
                     const finalData = {
-                        apis: ${JSON.stringify(sendData.apis)}, 
-                        scopeName: ${JSON.stringify(sendData.scopeName)}
+                        apis: ${JSON.stringify(sendData.apis || [])}, 
+                        scopeName: ${JSON.stringify(sendData?.scopeName || "")},
+                        maxCacheNumber: ${JSON.stringify(sendData?.maxCacheNumber || 100)}
                     };
                     worker.postMessage(JSON.stringify({type: '_v_data', value: finalData}));
 
-                    let isCleanCache = !previewCacheTime;
-                    if (previewCacheTime) {
+                    let isCleanCache = false;
+                    if (cacheTimeout && previewCacheTime) {
                         const diff = Date.now() - Number(previewCacheTime);
-                        if (diff > ${Number(sendData.cacheTimeout) || 0}) {
+                        if (diff > ${Number(sendData.cacheTimeout)}) {
                             isCleanCache = true;
                         }
                     }
@@ -94,14 +95,9 @@ var name = "vite-plugin-vanner-cache";
 //#region src/plugin/index.ts
 const __dirname = dirname(fileURLToPath(import.meta.url));
 function plugin_default(props) {
+	const { scopeName } = props;
 	let viteConfig;
 	let isDev = true;
-	const { scopeName = "", apis = [], cacheTimeout = 1e3 * 60 * 60 } = props;
-	const sendData = {
-		apis,
-		scopeName,
-		cacheTimeout
-	};
 	return {
 		name,
 		config(_, { mode }) {
@@ -110,23 +106,23 @@ function plugin_default(props) {
 		configResolved(rc) {
 			viteConfig = rc;
 		},
-		resolveId(id) {
-			return ["_v_main_fetch_code_chunk"].includes(id) ? id : null;
-		},
-		load(id) {
-			if (id === "_v_main_fetch_code_chunk") return injectCode({
-				pkgName: name,
-				sendData,
-				scopeRegisterPath: getPath(viteConfig, isDev, scopeName).registerScopePath
-			});
-			return null;
-		},
 		buildStart() {
 			if (!isDev) this.emitFile({
 				type: "chunk",
 				id: MAIN_CHUNK,
 				fileName: getPath(viteConfig, isDev).mainPath.replace(/^\//, "")
 			});
+		},
+		resolveId(id) {
+			return ["_v_main_fetch_code_chunk"].includes(id) ? id : null;
+		},
+		load(id) {
+			if (id === "_v_main_fetch_code_chunk") return injectCode({
+				pkgName: name,
+				sendData: props,
+				scopeRegisterPath: getPath(viteConfig, isDev, scopeName).registerScopePath
+			});
+			return null;
 		},
 		transformIndexHtml: (html) => {
 			return {
@@ -142,30 +138,30 @@ function plugin_default(props) {
 				}]
 			};
 		},
+		generateBundle() {
+			this.emitFile({
+				type: "asset",
+				fileName: getPath(viteConfig, isDev).registerScopePath.replace(/^\//, ""),
+				source: readFileSync(resolve(__dirname, `./${LibName}`), "utf-8")
+			});
+		},
 		configureServer(server) {
 			server.middlewares.use((req, res, next) => {
 				if (req.url === getPath(viteConfig, isDev, scopeName).mainPath) {
 					res.setHeader("Content-Type", "application/javascript");
 					res.end(injectCode({
 						pkgName: name,
-						sendData,
+						sendData: props,
 						scopeRegisterPath: getPath(viteConfig, isDev, scopeName).registerScopePath
 					}));
 					return;
 				} else if (req.url === getPath(viteConfig, isDev, scopeName).registerScopePath) {
-					const swContent = fs.readFileSync(path.resolve(__dirname, `./${LibName}`), "utf-8");
+					const swContent = readFileSync(resolve(__dirname, `./${LibName}`), "utf-8");
 					res.setHeader("Content-Type", "application/javascript");
 					res.end(swContent);
 					return;
 				}
 				next();
-			});
-		},
-		generateBundle() {
-			this.emitFile({
-				type: "asset",
-				fileName: getPath(viteConfig, isDev).registerScopePath.replace(/^\//, ""),
-				source: fs.readFileSync(path.resolve(__dirname, `./${LibName}`), "utf-8")
 			});
 		}
 	};

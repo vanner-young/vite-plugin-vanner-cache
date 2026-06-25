@@ -1,12 +1,4 @@
-export interface InjectProps {
-    sendData: {
-        scopeName: string;
-        apis: Array<string>;
-        cacheTimeout: number;
-    };
-    scopeRegisterPath: string;
-    pkgName: string;
-}
+import type { InjectProps } from "./type";
 
 export function injectCode({ pkgName, sendData, scopeRegisterPath }: InjectProps) {
     const scope = sendData.scopeName ? `/${sendData.scopeName}/` : "/";
@@ -14,8 +6,8 @@ export function injectCode({ pkgName, sendData, scopeRegisterPath }: InjectProps
     return `
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-
-                if (${Number(sendData.cacheTimeout)} <= 0) {
+                const cacheTimeout = ${JSON.stringify(sendData.cacheTimeout)}
+                if (cacheTimeout && cacheTimeout < 1000 * 60 * 60) {
                     navigator.serviceWorker.getRegistration('${scope}').then((registration) => {
                         if (!registration) return
                         registration.unregister().then(() => {
@@ -33,15 +25,16 @@ export function injectCode({ pkgName, sendData, scopeRegisterPath }: InjectProps
                     localStorage.setItem('_v_cache_time', Date.now());
                     
                     const finalData = {
-                        apis: ${JSON.stringify(sendData.apis)}, 
-                        scopeName: ${JSON.stringify(sendData.scopeName)}
+                        apis: ${JSON.stringify(sendData.apis || [])}, 
+                        scopeName: ${JSON.stringify(sendData?.scopeName || "")},
+                        maxCacheNumber: ${JSON.stringify(sendData?.maxCacheNumber || 100)}
                     };
                     worker.postMessage(JSON.stringify({type: '_v_data', value: finalData}));
 
-                    let isCleanCache = !previewCacheTime;
-                    if (previewCacheTime) {
+                    let isCleanCache = false;
+                    if (cacheTimeout && previewCacheTime) {
                         const diff = Date.now() - Number(previewCacheTime);
-                        if (diff > ${Number(sendData.cacheTimeout) || 0}) {
+                        if (diff > ${Number(sendData.cacheTimeout)}) {
                             isCleanCache = true;
                         }
                     }

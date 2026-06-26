@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "rootDir": "./src/browser",
+    "target": "esnext",
+    "lib": ["esnext", "DOM", "DOM.Iterable"],
+    "types": [],
+    "noEmit": true,
+    "tsBuildInfoFile": "./dist/.ts_build_info/tsconfig.browser_build.json"
+  },
+  "include": ["src/browser/**/*.ts"]
+}

@@ -20,4 +20,11 @@ export default defineConfig([
             },
         },
     },
+    {
+        input: "src/browser/index.ts",
+        output: {
+            format: "iife",
+            file: "./dist/vb-sw.js",
+        },
+    },
 ]);

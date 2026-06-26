@@ -35,6 +35,9 @@ export class CacheCore extends CacheUtil {
     public interceptList: Array<string> = []; // 接口拦截列表
     public maxCacheNumber = 100; // 默认最大缓存数量
 
+    public isOpenStage = false; // 是否开启实验室功能
+    public translateServerPrefix = ""; // 转换请求类型之后的请求url前缀(实验室功能开启后使用)
+
     /**
      * worker service 注册监听，跳过所有等待直接通过
      * **/
@@ -51,10 +54,19 @@ export class CacheCore extends CacheUtil {
         if (!event.data) return;
         const { type, value } = JSON.parse(event.data);
         if (type === "_v_data") {
-            const { apis = [], scopeName, maxCacheNumber = this.maxCacheNumber } = value;
+            const {
+                apis = [],
+                scopeName,
+                maxCacheNumber = this.maxCacheNumber,
+                stage = false,
+                translateServerPrefix = "",
+            } = value;
             this.cacheName = scopeName;
             this.interceptList = [...(apis as Array<string>)];
             this.maxCacheNumber = maxCacheNumber;
+
+            this.isOpenStage = stage;
+            this.translateServerPrefix = translateServerPrefix;
         } else if (type === "_v_clean_cache") {
             await this.removeOldCache(caches, this.cacheName);
         }
@@ -69,32 +81,66 @@ export class CacheCore extends CacheUtil {
     }
 
     /**
+     * 转换请求
+     * @param { Request } request 原始请求
+     * **/
+    async translateRequest(request: Request) {
+        try {
+            let translateRequest = request;
+            let url = new URL(translateRequest.url);
+
+            // 未开启实验室功能，只拦截get请求
+            if (!this.isOpenStage) {
+                if (translateRequest.method.toUpperCase() !== "GET") return;
+            } else {
+                // 强制将 post 请求转为 get 请求
+                const cloneRequest = request.clone();
+                const bodyText = await cloneRequest.text();
+
+                // 重设 url
+                url = new URL(cloneRequest.url);
+                url.searchParams.set("__post_body__", bodyText);
+
+                translateRequest = new Request(`${this.translateServerPrefix}${url.toString()}`, {
+                    method: "GET",
+                    headers: request.headers,
+                });
+            }
+
+            // 由于 post 请求过来的 url 会被强制转为 params url，因此请求的缓存命中仍然是 params url
+            const match = this.interceptList.find((it) => url.pathname.startsWith(it));
+            if (!match) return;
+
+            return translateRequest;
+        } catch (e) {
+            console.warn("vannercache: handler request is fail... now request has not cache...", e);
+            return;
+        }
+    }
+
+    /**
      * 拦截所有fetch 请求，核心逻辑
      * @param { FetchEvent } event 原始event
      * **/
     async fetchBefore(event: FetchEvent) {
-        if (event.request.method !== "GET") return;
-
-        const url = new URL(event.request.url);
-        const match = this.interceptList.find((it) => url.pathname.startsWith(it));
-        if (!match) return;
+        const request = await this.translateRequest(event.request);
+        if (!request) return;
 
         // get 请求不存在 query 和 params 参数，使用 url 就是唯一参数
-        const cacheKey = event.request.url;
+        const cacheKey = request.url;
 
         event.respondWith(
-            caches.match(event.request).then((cachedResponse) => {
-                // 请求复用，兼容在一定时间内多次重复请求
+            caches.match(request).then((cachedResponse) => {
                 let fetchRequest: Promise<Response>;
 
                 if (this.requestCache.has(cacheKey)) {
                     fetchRequest = this.requestCache.get(cacheKey)!;
                 } else {
-                    fetchRequest = fetch(event.request.clone())
+                    fetchRequest = fetch(request.clone())
                         .then((networkResponse) => {
                             if (networkResponse && networkResponse.status === 200) {
                                 this.storageCache(
-                                    event.request,
+                                    request,
                                     networkResponse.clone(),
                                     this.cacheName,
                                     this.maxCacheNumber,

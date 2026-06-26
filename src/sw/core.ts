@@ -89,31 +89,35 @@ export class CacheCore extends CacheUtil {
             let translateRequest = request;
             let url = new URL(translateRequest.url);
 
-            // 未开启实验室功能，只拦截get请求
-            if (!this.isOpenStage) {
-                if (translateRequest.method.toUpperCase() !== "GET") return;
-            } else {
-                // 强制将 post 请求转为 get 请求
-                const cloneRequest = request.clone();
-                const bodyText = await cloneRequest.text();
-
-                // 重设 url
-                url = new URL(cloneRequest.url);
-                url.searchParams.set("__post_body__", bodyText);
-
-                translateRequest = new Request(`${this.translateServerPrefix}${url.toString()}`, {
-                    method: "GET",
-                    headers: request.headers,
-                });
+            const apiPath = url.pathname;
+            if (!this.interceptList.find((api) => apiPath.startsWith(api))) {
+                return;
             }
 
-            // 由于 post 请求过来的 url 会被强制转为 params url，因此请求的缓存命中仍然是 params url
-            const match = this.interceptList.find((it) => url.pathname.startsWith(it));
-            if (!match) return;
+            // 未开启实验室功能，只拦截get请求
+            const method = translateRequest.method.toUpperCase();
 
+            if (!this.isOpenStage) {
+                if (method !== "GET") return;
+            } else {
+                if (method === "POST") {
+                    const cloneRequest = request.clone();
+                    const bodyText = await cloneRequest.text();
+
+                    // 重设 url
+                    url = new URL(cloneRequest.url);
+                    url.pathname = `${this.translateServerPrefix}${apiPath}`;
+                    url.searchParams.set("__post_body__", bodyText);
+
+                    translateRequest = new Request(url.toString(), {
+                        method: "GET",
+                        headers: request.headers,
+                    });
+                }
+            }
             return translateRequest;
         } catch (e) {
-            console.warn("vannercache: handler request is fail... now request has not cache...", e);
+            console.warn("vanner cache: handler request is fail... now request has not cache...", e);
             return;
         }
     }
@@ -123,14 +127,14 @@ export class CacheCore extends CacheUtil {
      * @param { FetchEvent } event 原始event
      * **/
     async fetchBefore(event: FetchEvent) {
-        const request = await this.translateRequest(event.request);
-        if (!request) return;
-
-        // get 请求不存在 query 和 params 参数，使用 url 就是唯一参数
-        const cacheKey = request.url;
-
         event.respondWith(
-            caches.match(request).then((cachedResponse) => {
+            (async () => {
+                const request = await this.translateRequest(event.request);
+                if (!request) return fetch(event.request);
+
+                const cacheKey = request.url;
+
+                const cachedResponse = await caches.match(request);
                 let fetchRequest: Promise<Response>;
 
                 if (this.requestCache.has(cacheKey)) {
@@ -151,6 +155,7 @@ export class CacheCore extends CacheUtil {
                         .finally(() => {
                             this.requestCache.delete(cacheKey);
                         });
+
                     this.requestCache.set(cacheKey, fetchRequest);
                 }
 
@@ -160,7 +165,7 @@ export class CacheCore extends CacheUtil {
                 } else {
                     return fetchRequest;
                 }
-            }),
+            })(),
         );
     }
 }
